@@ -19,6 +19,7 @@ class AgentState(TypedDict):
     next_step: str
     task_type: str
     final_report: Dict[str, Any]
+    llm_model: str
 
 def manager_node(state: AgentState):
     print("[Manager Agent] Thinking...")
@@ -36,7 +37,7 @@ def manager_node(state: AgentState):
         else: task_type = "full_name_search"
     else:
         print(f"[DEBUG] Manager sees history: {history}")
-        res = run_manager(state["query"], history)
+        res = run_manager(state["query"], history, state.get("llm_model"))
         next_step = res.get("next_step", "correlation")
         task_type = res.get("args", {}).get("task_type", "general_search")
         
@@ -96,7 +97,7 @@ def scraper_node(state: AgentState):
         print(f"[Scraper Agent] Scraping {url}...")
         try:
             from langchain_core.messages import HumanMessage
-            res = scraper_agent.invoke({"messages": [HumanMessage(content=f"Scrape this URL and extract text: {url}")]})
+            res = scraper_agent.invoke({"messages": [HumanMessage(content=f"Scrape this URL and extract text: {url}")]}, llm_model=state.get("llm_model"))
             results.append(f"Scrape {url}:\n{res['messages'][-1].content}")
         except Exception as e:
             results.append(f"Failed to scrape {url}: {e}")
@@ -156,14 +157,15 @@ workflow.add_edge("correlation", END)
 
 custom_graph = workflow.compile()
 
-def run_custom_graph(query: str, context: str = "") -> dict:
+def run_custom_graph(query: str, context: str = "", llm_model: str = None) -> dict:
     initial_state = {
         "query": query,
         "context": context,
         "history": [],
         "raw_data": [],
         "urls_to_scrape": [],
-        "final_report": {}
+        "final_report": {},
+        "llm_model": llm_model
     }
     
     final_state = custom_graph.invoke(initial_state)

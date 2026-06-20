@@ -701,8 +701,26 @@ class EntityProfiler:
                         break
                 
                 if not already_exists:
+                    schema_name = meta.get("schema_person", {}).get("name")
+                    raw_title = meta.get("title", "Scraped Profile")
+                    
+                    # Clean up the title to look like a real name instead of a full SEO page title
+                    clean_title = schema_name or raw_title
+                    if len(clean_title) > 30 and (" - " in clean_title or " | " in clean_title or "," in clean_title):
+                        import re
+                        # Split by common separators and take the first part
+                        parts = re.split(r' \- | \| |,', clean_title)
+                        clean_title = parts[0].strip()
+                        # If it says 'Contact John Doe', remove 'Contact '
+                        if clean_title.lower().startswith("contact "):
+                            clean_title = clean_title[8:].strip()
+                            
+                    # Fallback to target value if it's still stupidly long
+                    if len(clean_title) > 40:
+                        clean_title = target_value
+                        
                     possible_entities.append({
-                        "persona_name": meta.get("title", "Scraped Profile"),
+                        "persona_name": clean_title,
                         "confidence": 0.5,
                         "linked_data": {"avatar_url": avatar_url, "profile_url": page_url},
                         "reasoning": "Extracted via OSINT deep-scrape engine outside the ReAct flow."

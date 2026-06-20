@@ -11,9 +11,9 @@ if sys.platform.startswith("win"):
 
 from graph import run_custom_graph
 
-def execute_query(query: str, session_history: list = None, context: str = "") -> tuple[dict, list]:
+def execute_query(query: str, session_history: list = None, context: str = "", llm_model: str = None) -> tuple[dict, list]:
     print(f"[API] Initializing Custom Multi-Agent workflow for: {query}")
-    result = run_custom_graph(query, context)
+    result = run_custom_graph(query, context, llm_model)
     final_report = result.get("final_report") or {}
     
     step_report = {

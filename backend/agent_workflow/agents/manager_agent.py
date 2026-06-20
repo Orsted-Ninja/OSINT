@@ -38,13 +38,14 @@ Query:
 History of actions executed so far:
 {history}
 """)
-llm = get_llm()
+from langchain_core.output_parsers import JsonOutputParser
 parser = JsonOutputParser()
-manager_chain = manager_prompt | llm | parser
 
-def run_manager(query: str, history: list) -> dict:
+def run_manager(query: str, history: list, llm_model: str = None) -> dict:
     import json
     import re
+    llm = get_llm(model=llm_model)
+    manager_chain = manager_prompt | llm | parser
     try:
         return manager_chain.invoke({
             "query": query,

@@ -8,6 +8,7 @@ import urllib.parse
 from typing import Dict, Optional
 
 from frontend.utils.api_client import api_client
+from backend.core.config import settings
 
 PLATFORM_ICONS = {
     'Instagram': 'IG', 'LinkedIn': 'LI', 'GitHub': 'GH', 'Twitter/X': 'TW',
@@ -75,8 +76,8 @@ def render_osint_panel():
             
             llm_model = st.selectbox(
                 "AI Model",
-                ["qwen2.5:0.5b", "qwen3.5:4b", "llama3.1:latest"],
-                index=0
+                settings.AVAILABLE_OLLAMA_MODELS,
+                index=settings.AVAILABLE_OLLAMA_MODELS.index(settings.OLLAMA_MODEL) if settings.OLLAMA_MODEL in settings.AVAILABLE_OLLAMA_MODELS else 0
             )
 
         # Context fields — critical for pinpointing individuals

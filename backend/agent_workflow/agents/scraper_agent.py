@@ -17,14 +17,14 @@ tools = [
     whois_lookup
 ]
 
-llm = get_llm()
+def get_agent_executor(llm_model: str = None):
+    llm = get_llm(model=llm_model)
+    return create_react_agent(
+        model=llm,
+        tools=tools,
+    )
 
-agent_executor = create_react_agent(
-    model=llm,
-    tools=tools,
-)
-
-def agent_invoke(inputs: dict):
+def agent_invoke(inputs: dict, llm_model: str = None):
     from langchain_core.messages import SystemMessage
     system_prompt = """
     ROLE
@@ -47,11 +47,12 @@ def agent_invoke(inputs: dict):
     Return valid JSON whenever possible.
     """
     messages = [SystemMessage(content=system_prompt)] + inputs.get("messages", [])
+    agent_executor = get_agent_executor(llm_model)
     return agent_executor.invoke({"messages": messages})
 
 # Expose agent with a compatible invoke interface
 class AgentWrapper:
-    def invoke(self, inputs):
-        return agent_invoke(inputs)
+    def invoke(self, inputs, llm_model: str = None):
+        return agent_invoke(inputs, llm_model)
 
 agent = AgentWrapper()

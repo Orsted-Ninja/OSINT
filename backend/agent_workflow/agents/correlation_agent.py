@@ -22,8 +22,13 @@ Format each entity in the list as:
    "persona_name": "...",
    "confidence": 0.95,
    "reasoning": "Why this matches",
-   "linked_data": {{"urls": ["http..."]}}
+   "linked_data": {{"platform": "github", "username": "real_username", "urls": ["http..."]}}
 }}
+
+CRITICAL RULES FOR FOOTPRINTS:
+- NEVER generate placeholder usernames like @GITHUB-PROFILE or @LINKEDIN-PROFILE.
+- If you do not find a real, explicit username in the raw data, DO NOT include the "username" field.
+- Do NOT make up data.
 
 CRITICAL JSON FORMATTING RULES:
 1. Do NOT use unescaped double quotes inside strings. Use 'single quotes' or escape them as \".
@@ -35,11 +40,11 @@ DATA:
 {data}
 """)
 
-llm = get_llm()
-correlation_chain = corr_prompt | llm
-
 def run_correlation(state):
     data = state.get("output", state)
+    llm_model = state.get("llm_model") if isinstance(state, dict) else None
+    llm = get_llm(model=llm_model)
+    correlation_chain = corr_prompt | llm
 
     try:
         # We manually invoke the LLM to get raw text to avoid standard JsonOutputParser crashing on malformed JSON

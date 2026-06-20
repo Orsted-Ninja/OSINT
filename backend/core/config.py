@@ -70,14 +70,18 @@ class Settings(BaseSettings):
 
     # --- Ollama (PRIMARY — local, offline, free) ---
     # Install: https://ollama.ai  |  Pull model: ollama pull qwen2.5:3b
+    OLLAMA_IS_BEING_USED: bool = False
     OLLAMA_HOST: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5:3b"  # 3b+ recommended for JSON reliability
+    AVAILABLE_OLLAMA_MODELS: list[str] = ["qwen2.5:0.5b", "qwen2.5:3b", "qwen3.5:4b", "llama3.1:latest"]
 
     # --- Optional cloud providers (set LLM_PROVIDER to use) ---
     # LLM_PROVIDER=gemini  → needs GEMINI_API_KEY
+    GEMINI_IS_BEING_USED: bool = False
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
     # LLM_PROVIDER=openai  → needs OPENAI_API_KEY (also works with Groq, LM Studio)
+    OPENAI_IS_BEING_USED: bool = False
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4o-mini"
