@@ -13,48 +13,90 @@ def render_network_viz():
     """Render network visualization interface"""
     st.header("🕸️ Syndicate Network Analysis")
     
-    # Controls
+    cases_response = api_client.get("/api/v1/cases")
+    cases = cases_response.get("cases", []) if isinstance(cases_response, dict) else []
+        
+    case_options = {c["id"]: f"{c.get('case_number', '')} - {c.get('title', '')}" for c in cases}
+    
+    # We define layout first to place the selectbox properly, but fetch logic needs the value
     col1, col2 = st.columns([1, 3])
     
     with col1:
         st.subheader("Analysis Controls")
         
+        selected_case_id = st.selectbox(
+            "Select Case", 
+            options=["global"] + list(case_options.keys()), 
+            format_func=lambda x: "Global Master Graph (All Cases)" if x == "global" else case_options.get(x)
+        )
+    
+    # Now fetch entities using the selected case
+    entities_data = api_client.get("/api/v1/graph/entities", {"case_id": selected_case_id})
+    if not isinstance(entities_data, list):
+        entities_data = []
+    entity_options = {e["id"]: f"{e.get('label', 'Unknown')} ({e.get('type', 'Unknown')})" for e in entities_data}
+    
+    with col1:
         analysis_type = st.selectbox(
             "Analysis Type",
-            ["Entity Profile Viewer", "Single Entity Network", "Syndicate Detection", "Path Finder"]
+            ["Full Network", "Entity Profile Viewer", "Syndicate Detection", "Path Finder"]
         )
         
-        if analysis_type == "Entity Profile Viewer":
-            entity_id = st.text_input(
-                "Entity ID or Name",
-                placeholder="Enter name, email, phone, username, etc."
-            )
-            
-            if st.button("View Profile", use_container_width=True):
-                _load_network(entity_id, 1)
+        if analysis_type == "Full Network":
+            st.info("Visualizes the entire network for the selected case.")
+            expand_master = False
+            if selected_case_id != "global":
+                expand_master = st.checkbox("Load Connections from Master Graph", help="Expands the case graph to include connections spanning to other cases in the entire database.")
                 
-        elif analysis_type == "Single Entity Network":
-            entity_id = st.text_input(
-                "Entity ID or Name",
-                placeholder="Enter entity identifier"
-            )
-            depth = st.slider("Network Depth", 1, 4, 2)
+            if st.button("Generate Case Network", use_container_width=True):
+                with st.spinner("Loading case network..."):
+                    try:
+                        network_data = api_client.get(f"/api/v1/graph/case/{selected_case_id}", {"expand_master": expand_master})
+                        st.session_state.network_data = network_data
+                    except Exception as e:
+                        st.error(f"Error loading case network: {e}")
+                
+        elif analysis_type == "Entity Profile Viewer":
+            if not entity_options:
+                st.info("No entities found. Add data from the OSINT panel first.")
+                entity_id = None
+            else:
+                entity_id = st.selectbox(
+                    "Select Entity",
+                    options=list(entity_options.keys()),
+                    format_func=lambda x: entity_options.get(x)
+                )
             
-            if st.button("Generate Network", use_container_width=True):
-                _load_network(entity_id, depth)
-        
+            if st.button("View Profile", use_container_width=True, disabled=not entity_options):
+                _load_network(entity_id, 1, selected_case_id)
+                
+
         elif analysis_type == "Syndicate Detection":
             min_connections = st.slider("Min Connections", 2, 10, 3)
             
             if st.button("Detect Syndicates", use_container_width=True):
-                _detect_syndicates(min_connections)
+                _detect_syndicates(min_connections, selected_case_id)
         
         elif analysis_type == "Path Finder":
-            source = st.text_input("Source Entity ID")
-            target = st.text_input("Target Entity ID")
+            if not entity_options or len(entity_options) < 2:
+                st.info("Need at least 2 entities to find a path.")
+                source = None
+                target = None
+            else:
+                source = st.selectbox(
+                    "Source Entity",
+                    options=list(entity_options.keys()),
+                    format_func=lambda x: entity_options.get(x)
+                )
+                target = st.selectbox(
+                    "Target Entity",
+                    options=list(entity_options.keys()),
+                    format_func=lambda x: entity_options.get(x),
+                    index=1 if len(entity_options) > 1 else 0
+                )
             
-            if st.button("Find Path", use_container_width=True):
-                _find_path(source, target)
+            if st.button("Find Path", use_container_width=True, disabled=not (source and target)):
+                _find_path(source, target, selected_case_id)
         
         # Legend
         st.markdown("---")
@@ -86,13 +128,17 @@ def render_network_viz():
             _render_syndicates(st.session_state.syndicates)
 
 
-def _load_network(entity_id: str, depth: int):
+def _load_network(entity_id: str, depth: int, case_id: str):
     """Load network data from API"""
     if not entity_id:
         st.error("Please enter an entity ID or name")
         return
     
-    result = api_client.get(f"/api/v1/graph/network/{entity_id}", {"depth": depth}, timeout=120)
+    params = {"depth": depth}
+    if case_id != "global":
+        params["case_id"] = case_id
+        
+    result = api_client.get(f"/api/v1/graph/network/{entity_id}", params, timeout=120)
     
     if "error" in result:
         error_detail = result.get("detail") or result.get("error") or "Unknown error"
@@ -109,11 +155,14 @@ def _load_network(entity_id: str, depth: int):
 
 
 
-def _detect_syndicates(min_connections: int):
+def _detect_syndicates(min_connections: int, case_id: str):
     """Detect criminal syndicates"""
-    result = api_client.post("/api/v1/graph/syndicates", {
-        "min_connections": min_connections
-    })
+    params = {"min_connections": min_connections}
+    url = "/api/v1/graph/syndicates"
+    if case_id != "global":
+        url += f"?case_id={case_id}"
+        
+    result = api_client.post(url, params)
     
     if "error" in result:
         st.error("Failed to detect syndicates")
@@ -122,13 +171,17 @@ def _detect_syndicates(min_connections: int):
     st.session_state.syndicates = result.get("syndicates", [])
 
 
-def _find_path(source: str, target: str):
-    """Find path between entities"""
+def _find_path(source: str, target: str, case_id: str):
+    """Find shortest path between two entities"""
     if not source or not target:
-        st.error("Please enter both source and target")
+        st.error("Please enter both source and target entity IDs")
         return
     
-    result = api_client.post("/api/v1/graph/path", {
+    url = "/api/v1/graph/path"
+    if case_id != "global":
+        url += f"?case_id={case_id}"
+        
+    result = api_client.post(url, {
         "source_id": source,
         "target_id": target
     })

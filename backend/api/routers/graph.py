@@ -13,10 +13,31 @@ from backend.services.graph_builder import CrimeGraphBuilder
 router = APIRouter()
 
 
+@router.get("/case/{case_id}", response_model=NetworkGraph)
+async def get_case_network(
+    case_id: str,
+    expand_master: bool = False,
+    driver: AsyncGraphDatabase = Depends(get_neo4j),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get the full network graph for a case"""
+    if driver is None:
+        raise HTTPException(status_code=503, detail="Neo4j not available")
+    service = CrimeGraphBuilder(driver)
+    try:
+        network = await service.get_case_graph(case_id, expand_master)
+        return network
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/network/{entity_id}", response_model=NetworkGraph)
 async def get_network(
     entity_id: str,
     depth: int = 2,
+    case_id: Optional[str] = None,
     driver: AsyncGraphDatabase = Depends(get_neo4j),
     current_user: dict = Depends(get_current_user)
 ):
@@ -33,7 +54,7 @@ async def get_network(
     depth = max(1, min(depth, 4))  # clamp depth to safe range
     service = CrimeGraphBuilder(driver)
     try:
-        network = await service.get_network_graph(entity_id, depth)
+        network = await service.get_network_graph(entity_id, depth, case_id)
         return network
     except RuntimeError as e:
         # Neo4j driver reports connectivity issues as RuntimeError
@@ -47,31 +68,50 @@ async def get_network(
 @router.post("/path", response_model=PathResponse)
 async def find_path(
     request: PathFindRequest,
+    case_id: Optional[str] = None,
     driver: AsyncGraphDatabase = Depends(get_neo4j),
     current_user: dict = Depends(get_current_user)
 ):
     """Find shortest path between two entities"""
     service = CrimeGraphBuilder(driver)
     try:
-        path = await service.shortest_path(request.source_id, request.target_id)
-        if not path:
-            raise HTTPException(status_code=404, detail="No path found")
-        return path
+        path = await service.shortest_path(request.source_id, request.target_id, case_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+        
+    if not path:
+        raise HTTPException(status_code=404, detail="No path found")
+        
+    return path
 
 
 @router.post("/syndicates")
 async def detect_syndicates(
     request: SyndicateDetectionRequest,
+    case_id: Optional[str] = None,
     driver: AsyncGraphDatabase = Depends(get_neo4j),
     current_user: dict = Depends(get_current_user)
 ):
     """Detect criminal syndicates"""
     service = CrimeGraphBuilder(driver)
     try:
-        syndicates = await service.find_syndicates(request.min_connections)
+        syndicates = await service.find_syndicates(request.min_connections, case_id)
         return {"syndicates": syndicates}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/entities")
+async def get_entities(
+    case_id: Optional[str] = None,
+    driver: AsyncGraphDatabase = Depends(get_neo4j),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get a list of entities (filtered by case_id)"""
+    service = CrimeGraphBuilder(driver)
+    try:
+        entities = await service.get_entities(case_id)
+        return entities
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

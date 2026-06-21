@@ -56,10 +56,53 @@ def username_osint(username: str):
                         "site": parts[0].replace("[+]", "").strip(),
                         "url": parts[1].strip()
                     })
+        from backend.agent_workflow.tools.image_extraction_tool import extract_images
+        from backend.agent_workflow.tools.profile_scraper import scrape_profile
+        
+        # High-value platforms to auto-scrape for images and text
+        high_value = {"GitHub", "AllMyLinks", "Medium", "DailyMotion", "Pinterest", "Linktree", "Snapchat", "Mastodon"}
+        
+        results_processed = []
+        for f in found[:20]:
+            site = f["site"]
+            url = f["url"]
+            images = []
+            text_content = ""
+            
+            if site in high_value or len(results_processed) < 3:
+                # 1. Extract Images
+                try:
+                    imgs_extracted = extract_images.invoke({"url": url})
+                    if isinstance(imgs_extracted, list):
+                        images = imgs_extracted
+                except Exception:
+                    pass
+                
+                # 2. Extract Textual Data (Bio, names, target-related info)
+                try:
+                    profile_data = scrape_profile.invoke({"url": url})
+                    if isinstance(profile_data, dict):
+                        # Keep only the relevant textual bits to avoid huge payloads
+                        desc = profile_data.get("description", "") or ""
+                        content = profile_data.get("content", "") or ""
+                        title = profile_data.get("title", "") or ""
+                        
+                        # Grab the first 1000 characters of the body to get bios/links
+                        snippet = content[:1000] if content else ""
+                        text_content = f"Title: {title} | Desc: {desc} | Content: {snippet}"
+                except Exception:
+                    pass
+            
+            results_processed.append({
+                "site": site,
+                "url": url,
+                "images": images,
+                "profile_text": text_content
+            })
 
         return {
             "username": username,
-            "results": found[:20],  # LIMIT SIZE
+            "results": results_processed,  # Auto-enriched with images and text
             "count": len(found)
         }
 

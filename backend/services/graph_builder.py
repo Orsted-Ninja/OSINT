@@ -28,8 +28,22 @@ class CrimeGraphBuilder:
         props['node_type'] = entity.node_type
         
         if not entity.node_id:
-            entity.node_id = str(uuid.uuid4())
+            # Generate deterministic ID to prevent duplicates
+            import hashlib
+            
+            # Find a unique identifier from properties
+            unique_val = props.get("value") or props.get("username") or props.get("name")
+            
+            if unique_val:
+                unique_str = f"{entity.node_type}:{str(unique_val).lower()}"
+                entity.node_id = hashlib.md5(unique_str.encode()).hexdigest()
+            else:
+                entity.node_id = str(uuid.uuid4())
+                
         props['id'] = entity.node_id
+        
+        # Extract case_id to add to case_ids list
+        case_id = props.pop("case_id", None)
         
         # Build Cypher query dynamically
         prop_keys = ', '.join([f"{k}: ${k}" for k in props.keys()])
@@ -37,8 +51,18 @@ class CrimeGraphBuilder:
         query = f"""
         MERGE (n:{entity.node_type} {{id: $id}})
         SET n += {{{prop_keys}}}
-        RETURN n.id as node_id
         """
+        
+        if case_id:
+            query += f"""
+        WITH n
+        SET n.case_ids = CASE 
+            WHEN '{case_id}' IN coalesce(n.case_ids, []) THEN coalesce(n.case_ids, []) 
+            ELSE coalesce(n.case_ids, []) + '{case_id}' 
+        END
+        """
+        
+        query += "\n        RETURN n.id as node_id"
         
         async with self.driver.session() as session:
             result = await session.run(query, **props)
@@ -57,6 +81,34 @@ class CrimeGraphBuilder:
             result = await session.run(query, id=entity_id)
             summary = await result.consume()
             return summary.counters.nodes_deleted > 0
+
+    async def get_entities(self, case_id: str = None) -> list:
+        """
+        Get a list of all entities, optionally filtered by case_id.
+        """
+        async with self.driver.session() as session:
+            query = """
+            MATCH (n)
+            """
+            if case_id and case_id != "global":
+                query += f"WHERE '{case_id}' IN coalesce(n.case_ids, []) "
+            
+            query += """
+            RETURN n.id AS id, labels(n)[0] AS type, n.name AS name, n.value AS value
+            ORDER BY n.name, n.value
+            LIMIT 500
+            """
+            
+            result = await session.run(query)
+            entities = []
+            async for record in result:
+                label = record["name"] or record["value"] or record["id"]
+                entities.append({
+                    "id": record["id"],
+                    "type": record["type"],
+                    "label": label
+                })
+            return entities
     
     async def create_relationship(self, rel: Relationship) -> bool:
         """
@@ -84,16 +136,19 @@ class CrimeGraphBuilder:
             )
             return await result.single() is not None
     
-    async def find_syndicates(self, min_connections: int = 3) -> List[Dict]:
+    async def find_syndicates(self, min_connections: int = 3, case_id: str = None) -> List[Dict]:
         """
         Detect criminal syndicates using community detection
         """
         async with self.driver.session() as session:
             # Find tightly connected clusters
-            query = """
+            case_filter = f"WHERE ('global' = $case_id OR $case_id IN coalesce(p.case_ids, []) OR $case_id IN coalesce(other.case_ids, []))" if case_id else ""
+            
+            query = f"""
             MATCH (p)-[:KNOWS|TRANSACTED_WITH|RELATED_TO|HAS_IDENTIFIER*1..3]-(other)
             WHERE (p:Person OR p:DigitalIdentity OR p:Organization) 
               AND (other:Person OR other:DigitalIdentity OR other:Organization)
+            {case_filter}
             WITH p, collect(DISTINCT other) as connections
             WHERE size(connections) >= $min_conn
             RETURN p.id as person_id, 
@@ -103,13 +158,72 @@ class CrimeGraphBuilder:
             ORDER BY connection_count DESC
             """
             
-            result = await session.run(query, min_conn=min_connections)
+            result = await session.run(query, min_conn=min_connections, case_id=case_id or 'global')
             records = []
             async for record in result:
                 records.append(dict(record))
             return records
-    
-    async def get_network_graph(self, center_node_id: str, depth: int = 2) -> Dict:
+    async def get_case_graph(self, case_id: str = None, expand_master: bool = False) -> Dict:
+        """Get the full network graph for a case, or the global graph."""
+        async with self.driver.session() as session:
+            # Get all paths
+            query = """
+            MATCH path = (a)-[r]->(b)
+            """
+            if case_id and case_id != "global":
+                if expand_master:
+                    # At least one node must be in the case
+                    query += f"WHERE '{case_id}' IN coalesce(a.case_ids, []) OR '{case_id}' IN coalesce(b.case_ids, []) "
+                else:
+                    # Both nodes must be in the case
+                    query += f"WHERE '{case_id}' IN coalesce(a.case_ids, []) AND '{case_id}' IN coalesce(b.case_ids, []) "
+            
+            query += """
+            RETURN 
+                nodes(path) AS path_nodes,
+                relationships(path) AS path_rels
+            LIMIT 1000
+            """
+            
+            result = await session.run(query)
+            
+            nodes = {}
+            edges = []
+            
+            async for record in result:
+                for node in record["path_nodes"]:
+                    node_key = node.get("id")
+                    if node_key and node_key not in nodes:
+                        nodes[node_key] = {
+                            "id": node_key,
+                            "label": node.get("name") or node.get("username") or node.get("value") or node_key,
+                            "group": list(node.labels)[0] if node.labels else "Unknown",
+                            "title": str(dict(node))
+                        }
+                
+                for r in record["path_rels"]:
+                    start_id = r.start_node.get("id")
+                    end_id = r.end_node.get("id")
+                    if start_id and end_id:
+                        edges.append({
+                            "from": start_id,
+                            "to": end_id,
+                            "label": r.type,
+                            "title": str(dict(r))
+                        })
+            
+            # Deduplicate edges
+            unique_edges = []
+            seen = set()
+            for e in edges:
+                key = f"{e['from']}-{e['to']}-{e['label']}"
+                if key not in seen:
+                    seen.add(key)
+                    unique_edges.append(e)
+                    
+            return {"nodes": list(nodes.values()), "edges": unique_edges}
+            
+    async def get_network_graph(self, center_node_id: str, depth: int = 2, case_id: str = None) -> Dict:
         """
         Get subgraph for visualization.
         Searches by node id, name, or username so callers can pass either
@@ -121,7 +235,7 @@ class CrimeGraphBuilder:
             # Also match by id OR name OR username so the UI can pass a name.
             query = f"""
             MATCH (center)
-            WHERE center.id = $center_id
+            WHERE (center.id = $center_id
                OR toLower(center.name) = toLower($center_id)
                OR toLower(center.username) = toLower($center_id)
                OR toLower(center.email) = toLower($center_id)
@@ -129,7 +243,8 @@ class CrimeGraphBuilder:
                OR center.upi = $center_id
                OR center.ip = $center_id
                OR center.bank_account = $center_id
-               OR toLower(center.domain) = toLower($center_id)
+               OR toLower(center.domain) = toLower($center_id))
+            {f"AND ('global' = $case_id OR $case_id IN coalesce(center.case_ids, []))" if case_id else ""}
             OPTIONAL MATCH path = (center)-[*1..{depth}]-(connected)
             WITH center,
                  CASE WHEN path IS NULL THEN [] ELSE nodes(path) END AS path_nodes,
@@ -145,7 +260,7 @@ class CrimeGraphBuilder:
                    collect(DISTINCT edge_data) AS edge_list
             """
 
-            result = await session.run(query, center_id=center_node_id)
+            result = await session.run(query, center_id=center_node_id, case_id=case_id or 'global')
             records = [r async for r in result]
 
             # If no records, center node was not found - return empty graph
@@ -205,29 +320,30 @@ class CrimeGraphBuilder:
                 "edges": unique_edges
             }
     
-    async def shortest_path(self, source_id: str, target_id: str) -> Optional[Dict]:
+    async def shortest_path(self, source_id: str, target_id: str, case_id: str = None) -> Dict:
         """
-        Find shortest path between two entities
+        Find shortest path between two nodes
         """
         async with self.driver.session() as session:
-            query = """
-            MATCH path = shortestPath(
-                (a {id: $source})-[:KNOWS|TRANSACTED_WITH|HAS_IDENTITY*]-(b {id: $target})
-            )
+            case_filter = f"WHERE ('global' = $case_id OR ($case_id IN coalesce(a.case_ids, []) AND $case_id IN coalesce(b.case_ids, [])))" if case_id else ""
+            query = f"""
+            MATCH (a) WHERE a.id = $source OR a.name = $source OR a.username = $source
+            MATCH (b) WHERE b.id = $target OR b.name = $target OR b.username = $target
+            {case_filter}
+            MATCH path = shortestPath((a)-[*..5]-(b))
             RETURN [node in nodes(path) | {id: node.id, type: node.node_type, name: node.name}] as path_nodes,
                    [rel in relationships(path) | type(rel)] as path_rels,
                    length(path) as path_length
             """
             
-            result = await session.run(query, source=source_id, target=target_id)
+            result = await session.run(query, source=source_id, target=target_id, case_id=case_id or 'global')
             record = await result.single()
             
             if record:
                 return {
                     "nodes": record["path_nodes"],
                     "relationships": record["path_rels"],
-                    "path_length": record["path_length"],
-                    "confidence": 1.0
+                    "length": record["path_length"]
                 }
             return None
 

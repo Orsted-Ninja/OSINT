@@ -411,13 +411,17 @@ def _render_results(results: Dict):
                     target_value = meta.get("target_value") or results.get("target_value", "")
                     target_type = meta.get("target_type") or results.get("target_type", "")
                     
+                    case = st.session_state.get("investigation_case")
+                    case_id = case.get("id") if case else "global"
+                    
                     # 1. Create central node
                     center_res = api_client.post("/api/v1/graph/entities", {
                         "type": "DigitalIdentity",
                         "properties": {
                             target_type: target_value,
                             "name": target_value,
-                            "discovered_via": "osint_investigation_manual_add"
+                            "discovered_via": "osint_investigation_manual_add",
+                            "case_id": case_id
                         }
                     })
                     
@@ -452,7 +456,8 @@ def _render_results(results: Dict):
                                     "properties": {
                                         "type": entity_type,
                                         "value": value,
-                                        "name": value
+                                        "name": value,
+                                        "case_id": case_id
                                     }
                                 })
                                 
@@ -464,7 +469,7 @@ def _render_results(results: Dict):
                                         "source_id": center_id,
                                         "target_id": related_id,
                                         "type": "HAS_IDENTIFIER",
-                                        "properties": {"confidence": 0.8}
+                                        "properties": {"confidence": 0.8, "case_id": case_id}
                                     })
                                     added_count += 1
                                     
@@ -479,9 +484,10 @@ def _render_results(results: Dict):
                                 "type": "DigitalIdentity",
                                 "properties": {
                                     "type": "profile",
-                                    "value": pid,
-                                    "name": pid,
-                                    "platform": platform
+                                    "platform": platform,
+                                    "username": pid,
+                                    "name": f"{platform} - {pid}",
+                                    "case_id": case_id
                                 }
                             })
                             if "error" not in prof_res and prof_res.get("id"):
@@ -490,7 +496,7 @@ def _render_results(results: Dict):
                                     "source_id": center_id,
                                     "target_id": prof_id,
                                     "type": "RELATED_TO",
-                                    "properties": {"confidence": prof.get("confidence_score", 0.5)}
+                                    "properties": {"confidence": prof.get("confidence_score", 0.5), "case_id": case_id}
                                 })
                                 added_count += 1
                         
