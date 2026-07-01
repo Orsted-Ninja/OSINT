@@ -238,10 +238,4 @@ This engine is built for **educational, defensive cybersecurity, and authorized 
 
 ## Contributors
 
-- **[Orsted-Ninja](https://github.com/Orsted-Ninja)** - *Core Contributor*
-
----
-
-## Credits
-
-Originally created and developed by Abhinav Manoj ([@abhinavmanoj05](https://github.com/abhinavmanoj05)).
+- **[Orsted-Ninja](https://github.com/Orsted-Ninja)**
