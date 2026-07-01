@@ -1,6 +1,6 @@
-# OSINT-V1: Autonomous Cyber Profiling & Threat Intelligence Engine
+# OSINT: Autonomous Cyber Profiling & Threat Intelligence Engine
 
-OSINT-V1 is a state-of-the-art, multi-agent Open Source Intelligence (OSINT) framework designed for deep persona investigations, entity correlation, and threat intelligence. Powered by a local LLM integration (e.g., Llama 3.1 / Qwen 2.5 via Ollama) and a robust ReAct (Reasoning and Acting) autonomous agent loop, it cross-references usernames, emails, IP addresses, and other identifiers across the clear web, social media, breach databases, and public records.
+OSINT is a state-of-the-art, multi-agent Open Source Intelligence (OSINT) framework designed for deep persona investigations, entity correlation, and threat intelligence. Powered by a local LLM integration (e.g., Llama 3.1 / Qwen 2.5 via Ollama) and a robust ReAct (Reasoning and Acting) autonomous agent loop, it cross-references usernames, emails, IP addresses, and other identifiers across the clear web, social media, breach databases, and public records.
 
 > **Note**: For an in-depth dive into the architecture, agent workflows, and API specifications, please refer to our [Detailed Documentation](DOCUMENTATION.md).
 
@@ -33,8 +33,8 @@ OSINT-V1 is a state-of-the-art, multi-agent Open Source Intelligence (OSINT) fra
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/abhinavmanoj05/OSINT-V1.git
-   cd OSINT-V1
+   git clone https://github.com/<your-username>/OSINT.git
+   cd OSINT
    ```
 
 2. **Create and activate a virtual environment:**
