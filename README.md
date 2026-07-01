@@ -119,3 +119,9 @@ The ReAct Agent loop is highly extensible. If you want to integrate new OSINT to
 ## Disclaimer
 
 This engine is built for **educational, defensive cybersecurity, and authorized threat-hunting purposes only**. Do not use this framework to investigate individuals or infrastructure without explicit consent or legal authorization. The inclusion of Tor routing is intended to prevent tracking and IP bans during authorized high-volume scanning, not to obscure malicious activity.
+
+---
+
+## Credits
+
+Originally created and developed by Abhinav Manoj ([@abhinavmanoj05](https://github.com/abhinavmanoj05)).
