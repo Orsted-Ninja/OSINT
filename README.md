@@ -33,7 +33,7 @@ OSINT is a state-of-the-art, multi-agent Open Source Intelligence (OSINT) framew
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/<your-username>/OSINT.git
+   git clone https://github.com/Orsted-Ninja/OSINT.git
    cd OSINT
    ```
 
